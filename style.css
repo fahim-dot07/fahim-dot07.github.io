@@ -1,0 +1,30 @@
+body {
+  font-family: Arial;
+  text-align: center;
+  margin: 0;
+  padding: 0;
+}
+
+nav {
+  background: #222;
+  padding: 10px;
+}
+
+nav a {
+  color: white;
+  margin: 10px;
+  text-decoration: none;
+}
+
+/* Hacker Theme */
+.hacker {
+  background: black;
+  color: #00ff00;
+  font-family: monospace;
+}
+
+/* Gaming Theme */
+.gaming {
+  background: #0b0f3a;
+  color: #00d9ff;
+}
