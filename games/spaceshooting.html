@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asteroid Shooter</title>
+    <!-- Load Tailwind for basic layout utilities -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+        :root {
+            --space-bg: #00001a;
+            --ship-color: #00ff00;
+            --asteroid-color: #cccccc;
+            --bullet-color: #ffff00;
+            --font-color: #ffffff;
+        }
+
+        body {
+            font-family: 'Space Mono', monospace;
+            background-color: var(--space-bg);
+            color: var(--font-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 10px;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            width: 95vw;
+            max-width: 900px;
+            aspect-ratio: 4 / 3;
+            border: 2px solid var(--font-color);
+            border-radius: 12px;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+            margin-bottom: 20px;
+        }
+
+        #gameCanvas {
+            width: 100%;
+            height: 100%;
+            background-color: var(--space-bg);
+            border-radius: 10px;
+            display: block;
+        }
+
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none; /* Allows clicks to pass through to the canvas/buttons */
+        }
+
+        #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 10;
+        }
+
+        #game-over-screen h1 {
+            font-size: 2.5rem;
+            color: #ff4d4d;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px #ff4d4d;
+        }
+
+        #game-over-screen p {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+        }
+
+        /* Mobile Controls Styling */
+        #mobile-controls {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            max-width: 900px;
+            gap: 10px;
+            padding: 10px;
+        }
+
+        .control-button {
+            background-color: #1a1a33;
+            color: var(--ship-color);
+            border: 2px solid var(--ship-color);
+            padding: 15px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            border-radius: 8px;
+            flex: 1;
+            max-width: 120px;
+            transition: all 0.1s ease-in-out;
+            box-shadow: 0 0 5px var(--ship-color);
+            user-select: none; /* Prevent selection on mobile */
+            touch-action: manipulation; /* Optimize for touch */
+        }
+
+        .control-button:active, .control-button.active {
+            background-color: var(--ship-color);
+            color: var(--space-bg);
+            box-shadow: 0 0 15px var(--ship-color);
+        }
+
+        .thrust-button {
+            color: #ffcc00;
+            border-color: #ffcc00;
+            box-shadow: 0 0 5px #ffcc00;
+        }
+        .thrust-button:active, .thrust-button.active {
+            background-color: #ffcc00;
+            color: var(--space-bg);
+            box-shadow: 0 0 15px #ffcc00;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        <div id="ui-overlay">
+            <div id="score-display" class="text-xl p-2 rounded bg-black/50">SCORE: 0</div>
+        </div>
+        <div id="game-over-screen">
+            <h1>GAME OVER</h1>
+            <p>You survived until score: <span id="final-score">0</span></p>
+            <button id="restart-button" class="control-button" style="color:#ffcc00; border-color:#ffcc00; max-width: 200px;">RESTART</button>
+        </div>
+    </div>
+
+    <div id="mobile-controls">
+        <button id="rotate-left" class="control-button">&larr; Rotate</button>
+        <button id="thrust-shoot" class="control-button thrust-button">THRUST / SHOOT</button>
+        <button id="rotate-right" class="control-button">Rotate &rarr;</button>
+    </div>
+
+    <script>
+        // --- GAME CONSTANTS ---
+        const ASTEROID_SPAWN_INTERVAL = 3000; // ms
+        const MAX_ASTEROIDS = 10;
+        const FPS = 60;
+        const FRAME_DURATION = 1000 / FPS;
+
+        // --- GAME STATE ---
+        let canvas, ctx;
+        let player, bullets, asteroids;
+        let score = 0;
+        let lastFrameTime = 0;
+        let lastAsteroidSpawn = 0;
+        let gameActive = false;
+
+        // --- OBJECT DEFINITIONS ---
+        const playerShip = {
+            x: 0, y: 0,
+            radius: 12,
+            angle: 0,
+            rotationSpeed: 0.05,
+            thrustPower: 0.06,
+            velocityX: 0, velocityY: 0,
+            friction: 0.995,
+            isThrusting: false,
+            canShoot: true,
+            shootDelay: 300,
+            lastShot: 0
+        };
+
+        const bulletBase = {
+            radius: 2,
+            lifetime: 1000, // ms
+            speed: 8
+        };
+
+        const asteroidBase = {
+            minRadius: 15, maxRadius: 40,
+            minSpeed: 0.5, maxSpeed: 2
+        };
+
+        // --- CONTROLS STATE ---
+        const controls = {
+            thrust: false,
+            rotateLeft: false,
+            rotateRight: false,
+            shoot: false
+        };
+
+        // --- INITIALIZATION ---
+        function init() {
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            const container = document.getElementById('game-container');
+
+            // Set canvas size dynamically to fill the container's computed size
+            function resizeCanvas() {
+                canvas.width = container.clientWidth;
+                canvas.height = container.clientHeight;
+                // Re-center the player if the game has started
+                if (gameActive) {
+                    player.x = canvas.width / 2;
+                    player.y = canvas.height / 2;
+                }
+            }
+
+            // Initial resize and listener for responsiveness
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+
+            // Reset game state
+            player = JSON.parse(JSON.stringify(playerShip)); // Deep clone
+            player.x = canvas.width / 2;
+            player.y = canvas.height / 2;
+
+            bullets = [];
+            asteroids = [];
+            score = 0;
+            document.getElementById('score-display').textContent = 'SCORE: 0';
+            document.getElementById('game-over-screen').style.display = 'none';
+            gameActive = true;
+            lastAsteroidSpawn = performance.now();
+        }
+
+        // --- DRAWING FUNCTIONS ---
+
+        /**
+         * Draws the spaceship (triangle)
+         */
+        function drawPlayer() {
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 2;
+
+            // Save the context state (important for rotation)
+            ctx.save();
+            ctx.translate(player.x, player.y);
+            ctx.rotate(player.angle);
+
+            // Draw the main ship shape (triangle pointing up/right)
+            ctx.beginPath();
+            ctx.moveTo(player.radius, 0); // Nose (right in rotation space)
+            ctx.lineTo(-player.radius, player.radius * 0.75); // Bottom-left corner
+            ctx.lineTo(-player.radius * 0.5, 0); // Notch
+            ctx.lineTo(-player.radius, -player.radius * 0.75); // Bottom-right corner
+            ctx.closePath();
+            ctx.stroke();
+
+            // Draw exhaust if thrusting
+            if (player.isThrusting) {
+                ctx.fillStyle = '#ffcc00';
+                ctx.beginPath();
+                ctx.moveTo(-player.radius * 0.8, -player.radius * 0.3);
+                ctx.lineTo(-player.radius * 2, 0);
+                ctx.lineTo(-player.radius * 0.8, player.radius * 0.3);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Restore the original context state
+            ctx.restore();
+        }
+
+        /**
+         * Draws an asteroid (jagged polygon)
+         * @param {object} a - The asteroid object
+         */
+        function drawAsteroid(a) {
+            ctx.strokeStyle = '#cccccc';
+            ctx.lineWidth = 2;
+            ctx.fillStyle = '#333344';
+
+            ctx.save();
+            ctx.translate(a.x, a.y);
+            ctx.rotate(a.rotation);
+
+            ctx.beginPath();
+            // Asteroid shape is a polygon with randomized vertices
+            for (let i = 0; i < a.vertices.length; i++) {
+                const vert = a.vertices[i];
+                const r = a.radius + vert.offset;
+                const angle = (i / a.vertices.length) * (Math.PI * 2);
+
+                if (i === 0) {
+                    ctx.moveTo(r * Math.cos(angle), r * Math.sin(angle));
+                } else {
+                    ctx.lineTo(r * Math.cos(angle), r * Math.sin(angle));
+                }
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        /**
+         * Draws a bullet
+         * @param {object} b - The bullet object
+         */
+        function drawBullet(b) {
+            ctx.fillStyle = bulletBase.color;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2, false);
+            ctx.fill();
+        }
+
+        // --- GAME LOGIC FUNCTIONS ---
+
+        /**
+         * Creates a new bullet based on the player's position and angle.
+         */
+        function shoot() {
+            const now = performance.now();
+            if (now < player.lastShot + player.shootDelay) {
+                return;
+            }
+
+            // Calculate bullet's starting position (slightly in front of the ship's nose)
+            const dx = Math.cos(player.angle) * player.radius * 1.5;
+            const dy = Math.sin(player.angle) * player.radius * 1.5;
+
+            // Create the bullet
+            bullets.push({
+                x: player.x + dx,
+                y: player.y + dy,
+                velocityX: Math.cos(player.angle) * bulletBase.speed + player.velocityX * 0.5,
+                velocityY: Math.sin(player.angle) * bulletBase.speed + player.velocityY * 0.5,
+                radius: bulletBase.radius,
+                spawnTime: now
+            });
+
+            player.lastShot = now;
+        }
+
+        /**
+         * Creates a new asteroid at a random edge of the screen.
+         */
+        function spawnAsteroid() {
+            if (asteroids.length >= MAX_ASTEROIDS) return;
+
+            // Randomly choose a side to spawn from (0: top, 1: right, 2: bottom, 3: left)
+            const side = Math.floor(Math.random() * 4);
+            const r = Math.random() * (asteroidBase.maxRadius - asteroidBase.minRadius) + asteroidBase.minRadius;
+            let x, y, targetX, targetY;
+
+            // Determine spawn point (x, y) and center target (targetX, targetY)
+            switch (side) {
+                case 0: // Top
+                    x = Math.random() * canvas.width;
+                    y = -r;
+                    targetX = canvas.width / 2;
+                    targetY = canvas.height / 2;
+                    break;
+                case 1: // Right
+                    x = canvas.width + r;
+                    y = Math.random() * canvas.height;
+                    targetX = canvas.width / 2;
+                    targetY = canvas.height / 2;
+                    break;
+                case 2: // Bottom
+                    x = Math.random() * canvas.width;
+                    y = canvas.height + r;
+                    targetX = canvas.width / 2;
+                    targetY = canvas.height / 2;
+                    break;
+                case 3: // Left
+                    x = -r;
+                    y = Math.random() * canvas.height;
+                    targetX = canvas.width / 2;
+                    targetY = canvas.height / 2;
+                    break;
+            }
+
+            // Calculate direction and speed
+            const angleToTarget = Math.atan2(targetY - y, targetX - x);
+            const speed = Math.random() * (asteroidBase.maxSpeed - asteroidBase.minSpeed) + asteroidBase.minSpeed;
+
+            // Create jagged vertices
+            const numVertices = Math.floor(Math.random() * 5) + 8; // 8 to 12 vertices
+            const vertices = [];
+            for (let i = 0; i < numVertices; i++) {
+                // Random offset between -10% and +10% of radius for jagged look
+                const offset = (Math.random() * 0.2 - 0.1) * r;
+                vertices.push({ offset: offset });
+            }
+
+            // Push to array
+            asteroids.push({
+                x: x, y: y, radius: r,
+                velocityX: Math.cos(angleToTarget) * speed,
+                velocityY: Math.sin(angleToTarget) * speed,
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: (Math.random() - 0.5) * 0.02,
+                vertices: vertices
+            });
+        }
+
+        /**
+         * Checks for circle-to-circle collision.
+         * @param {object} obj1 - Object with x, y, radius
+         * @param {object} obj2 - Object with x, y, radius
+         * @returns {boolean} - True if collision occurs
+         */
+        function checkCollision(obj1, obj2) {
+            const dx = obj1.x - obj2.x;
+            const dy = obj1.y - obj2.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < obj1.radius + obj2.radius;
+        }
+
+        /**
+         * Handles all game updates: movement, spawning, collisions.
+         */
+        function update(deltaTime) {
+            if (!gameActive) return;
+
+            // --- Player Movement ---
+            player.isThrusting = false;
+
+            if (controls.rotateLeft) {
+                player.angle -= player.rotationSpeed;
+            }
+            if (controls.rotateRight) {
+                player.angle += player.rotationSpeed;
+            }
+            if (controls.thrust) {
+                player.isThrusting = true;
+                player.velocityX += Math.cos(player.angle) * player.thrustPower * (deltaTime / FRAME_DURATION);
+                player.velocityY += Math.sin(player.angle) * player.thrustPower * (deltaTime / FRAME_DURATION);
+            }
+            if (controls.shoot) {
+                shoot();
+            }
+
+            // Apply friction and update position
+            player.velocityX *= player.friction;
+            player.velocityY *= player.friction;
+            player.x += player.velocityX * (deltaTime / FRAME_DURATION);
+            player.y += player.velocityY * (deltaTime / FRAME_DURATION);
+
+            // Wrap player position around the screen edges
+            if (player.x < -player.radius) player.x = canvas.width + player.radius;
+            if (player.x > canvas.width + player.radius) player.x = -player.radius;
+            if (player.y < -player.radius) player.y = canvas.height + player.radius;
+            if (player.y > canvas.height + player.radius) player.y = -player.radius;
+
+            // --- Bullet Movement and Lifetime ---
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.x += b.velocityX * (deltaTime / FRAME_DURATION);
+                b.y += b.velocityY * (deltaTime / FRAME_DURATION);
+
+                // Remove old bullets
+                if (performance.now() - b.spawnTime > bulletBase.lifetime) {
+                    bullets.splice(i, 1);
+                }
+            }
+
+            // --- Asteroid Movement and Spawning ---
+            if (performance.now() - lastAsteroidSpawn > ASTEROID_SPAWN_INTERVAL && asteroids.length < MAX_ASTEROIDS) {
+                spawnAsteroid();
+                lastAsteroidSpawn = performance.now();
+            }
+
+            asteroids.forEach(a => {
+                a.x += a.velocityX * (deltaTime / FRAME_DURATION);
+                a.y += a.velocityY * (deltaTime / FRAME_DURATION);
+                a.rotation += a.rotationSpeed * (deltaTime / FRAME_DURATION);
+
+                // Simple removal when far off-screen to prevent endless array growth
+                const margin = a.radius + 50;
+                if (a.x < -margin || a.x > canvas.width + margin || a.y < -margin || a.y > canvas.height + margin) {
+                    // Find index and remove. This is less efficient than the reverse loop
+                    // but it's simpler here since we aren't iterating through asteroids for removal later.
+                    const index = asteroids.indexOf(a);
+                    if (index > -1) asteroids.splice(index, 1);
+                }
+            });
+
+            // --- Collision Detection ---
+            let newAsteroids = [...asteroids];
+
+            // 1. Bullet-Asteroid Collision
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                for (let j = newAsteroids.length - 1; j >= 0; j--) {
+                    const a = newAsteroids[j];
+
+                    if (checkCollision(b, a)) {
+                        bullets.splice(i, 1); // Remove bullet
+                        score += Math.floor(100 / a.radius); // Score based on size (smaller gives more points)
+                        document.getElementById('score-display').textContent = 'SCORE: ' + score;
+
+                        // Check if asteroid is large enough to split
+                        if (a.radius > asteroidBase.minRadius * 1.5) {
+                            const newSize = a.radius * 0.5;
+                            for (let k = 0; k < 2; k++) {
+                                const newAngle = Math.random() * Math.PI * 2;
+                                const newSpeed = asteroidBase.maxSpeed * 1.5;
+                                newAsteroids.push({
+                                    x: a.x, y: a.y, radius: newSize,
+                                    velocityX: Math.cos(newAngle) * newSpeed,
+                                    velocityY: Math.sin(newAngle) * newSpeed,
+                                    rotation: Math.random() * Math.PI * 2,
+                                    rotationSpeed: (Math.random() - 0.5) * 0.04,
+                                    vertices: a.vertices.map(v => ({ offset: v.offset * 0.5 })) // Scale vertices
+                                });
+                            }
+                        }
+
+                        newAsteroids.splice(j, 1); // Remove asteroid
+                        i = bullets.length; // Restart bullet loop in case of array change
+                        break; // Stop checking this asteroid against other bullets
+                    }
+                }
+            }
+            asteroids = newAsteroids;
+
+            // 2. Player-Asteroid Collision (Game Over)
+            for (let i = 0; i < asteroids.length; i++) {
+                const a = asteroids[i];
+                if (checkCollision(player, a)) {
+                    // Game Over Logic
+                    gameActive = false;
+                    document.getElementById('final-score').textContent = score;
+                    document.getElementById('game-over-screen').style.display = 'flex';
+                    return; // Stop updating
+                }
+            }
+        }
+
+        // --- GAME LOOP ---
+
+        function gameLoop(timestamp) {
+            const deltaTime = timestamp - lastFrameTime;
+            lastFrameTime = timestamp;
+
+            // Clear the canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Update game state
+            update(deltaTime);
+
+            // Draw everything
+            if (gameActive) {
+                drawPlayer();
+                bullets.forEach(drawBullet);
+                asteroids.forEach(drawAsteroid);
+            }
+
+            // Request next frame
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- INPUT HANDLERS (Keyboard and Touch) ---
+
+        // Keyboard Handlers
+        document.addEventListener('keydown', e => {
+            if (!gameActive) return;
+            switch (e.key) {
+                case 'ArrowLeft':
+                case 'a':
+                    controls.rotateLeft = true;
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    controls.rotateRight = true;
+                    break;
+                case 'ArrowUp':
+                case 'w':
+                    controls.thrust = true;
+                    break;
+                case ' ':
+                    if (!controls.shoot) { // Only trigger shoot once per key press
+                         controls.shoot = true;
+                    }
+                    e.preventDefault(); // Prevent spacebar from scrolling
+                    break;
+            }
+        });
+
+        document.addEventListener('keyup', e => {
+            if (!gameActive) return;
+            switch (e.key) {
+                case 'ArrowLeft':
+                case 'a':
+                    controls.rotateLeft = false;
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    controls.rotateRight = false;
+                    break;
+                case 'ArrowUp':
+                case 'w':
+                    controls.thrust = false;
+                    break;
+                case ' ':
+                    controls.shoot = false;
+                    break;
+            }
+        });
+
+        // Touch Handlers
+        const btnLeft = document.getElementById('rotate-left');
+        const btnRight = document.getElementById('rotate-right');
+        const btnThrustShoot = document.getElementById('thrust-shoot');
+        const restartButton = document.getElementById('restart-button');
+
+        function setControlState(element, controlProp, value, isShoot=false) {
+            controls[controlProp] = value;
+            element.classList.toggle('active', value);
+            if (isShoot && value) {
+                controls.shoot = true;
+                // For touch, we treat the press as a shot. The keyup/touchend handles setting controls.shoot = false.
+            } else if (isShoot && !value) {
+                // If it was just a tap (short touch), we don't want continuous fire, so we turn off 'shoot' on touchend.
+                controls.shoot = false;
+            }
+        }
+
+        // Rotate Left
+        btnLeft.addEventListener('touchstart', (e) => { e.preventDefault(); setControlState(btnLeft, 'rotateLeft', true); });
+        btnLeft.addEventListener('touchend', () => setControlState(btnLeft, 'rotateLeft', false));
+
+        // Rotate Right
+        btnRight.addEventListener('touchstart', (e) => { e.preventDefault(); setControlState(btnRight, 'rotateRight', true); });
+        btnRight.addEventListener('touchend', () => setControlState(btnRight, 'rotateRight', false));
+
+        // Thrust / Shoot (using touchstart/touchend for both)
+        btnThrustShoot.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            setControlState(btnThrustShoot, 'thrust', true);
+            setControlState(btnThrustShoot, 'shoot', true, true);
+        });
+        btnThrustShoot.addEventListener('touchend', () => {
+            setControlState(btnThrustShoot, 'thrust', false);
+            setControlState(btnThrustShoot, 'shoot', false, true);
+        });
+
+        // Restart Button
+        restartButton.addEventListener('click', () => init());
+
+        // --- START GAME ---
+        window.onload = function () {
+            init();
+            requestAnimationFrame(gameLoop);
+        }
+
+    </script>
+</body>
+</html>
+
