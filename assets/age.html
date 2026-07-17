@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <title>বয়স চেকার</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 100px;
+            background: #f5f5f5;
+        }
+        input, button {
+            padding: 10px;
+            font-size: 16px;
+            margin: 5px;
+        }
+        #output {
+            margin-top: 20px;
+            font-size: 20px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>তোমার বয়স কত?</h2>
+    
+    <input type="number" id="ageInput" placeholder="বয়স লিখো">
+    <button onclick="checkAge()">চেক করো</button>
+
+    <div id="output"></div>
+
+    <script>
+        function checkAge() {
+            let age = document.getElementById("ageInput").value;
+            let output = document.getElementById("output");
+
+            if (age === "") {
+                output.innerText = "দয়া করে বয়স লিখো";
+                output.style.color = "orange";
+                return;
+            }
+
+            age = Number(age);
+
+            if (age >= 18) {
+                output.innerText = "Adult";
+                output.style.color = "green";
+            } else if (age >= 0) {
+                output.innerText = "Minor";
+                output.style.color = "red";
+            } else {
+                output.innerText = "ভ্যালিড বয়স লিখো";
+                output.style.color = "orange";
+            }
+        }
+    </script>
+
+</body>
+</html>
