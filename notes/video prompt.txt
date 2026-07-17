@@ -1,0 +1,29 @@
+
+{
+"title": "Dark Cinematic Montage (My Version)", "description": "A fast montage using my facelphoto in a dark cinematic style, showing different moods and expressions.", "duration": 12, "style":{ "look": "Dark, cinematic, moody", "colors": "Blue, grey, low light, high Contrast", "lighting":; "Face highlighted, background dark"
+}
+"instructions": "Replace the person's face with my uploaded photo. Keep my face natural and realistic in all Scenes.", "scenes":[ { "time": "0-1.5",
+"scene": "Close-up of my face, slight smile, looking off camera"
+},
+{
+"time": "1.5-3", "scene": "Looking directly at camera, serious expression"
+},
+{
+"time": "3-4.5", "scene": "Side light on face, thinking mood"
+},
+{
+"time": "4.5-6", "scene": "Walking outside, looking around"
+},
+{
+"time": "6-7.5", "scene":"Wearing cap, slight smirk” },
+{
+"time":"7.5-9", "scene": "Adjusting cap, intense look"
+},
+{
+"time": "9-10.5", "scene": "Repeat smile close-up"
+},
+{
+"time": "10.5-12", "scene". "Serious direct look" }
+],
+"transitions": "Fast cuts", "audio": "Dark suspense music"
+}
