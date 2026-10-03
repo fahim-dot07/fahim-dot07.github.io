@@ -11,6 +11,14 @@
 			.green {  color:#16FF06    }
 			.cyan {   color:#00FFD9    }
 		</style>
+<!-- HTML Head এ লিঙ্ক যুক্ত করা -->
+  <link rel="manifest" href="manifest.json">
+ <script>
+  // Service Worker রেজিস্টার করা
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js');
+  }
+</script>
 	</head>
 	<body>
 		<h1 class="green" align="center">
