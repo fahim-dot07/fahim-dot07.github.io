@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b1220">
+<title>রেসিং গেম</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{
+    width:100%;height:100%;overflow:hidden;background:#0b1220;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Bengali",sans-serif;
+    touch-action:none;user-select:none;-webkit-user-select:none;
+  }
+  #game{display:block;width:100%;height:100%;}
+
+  /* ---------- কন্ট্রোল বাটন ---------- */
+  #controls{
+    position:fixed;left:0;right:0;bottom:0;z-index:10;
+    display:flex;justify-content:space-between;align-items:flex-end;
+    padding:0 18px calc(16px + env(safe-area-inset-bottom));
+    pointer-events:none;
+  }
+  .side{display:flex;gap:14px;pointer-events:auto;}
+  .btn{
+    width:74px;height:74px;border-radius:50%;
+    border:2px solid rgba(255,255,255,.35);
+    background:rgba(255,255,255,.12);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+    color:#fff;font-size:26px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;
+    touch-action:none;cursor:pointer;
+    transition:transform .06s ease, background .06s ease;
+    box-shadow:0 6px 18px rgba(0,0,0,.35);
+  }
+  .btn.active{background:rgba(255,255,255,.42);transform:scale(.92);}
+  .btn.gas{
+    width:86px;height:86px;font-size:32px;
+    border-color:rgba(52,211,153,.7);
+    background:rgba(52,211,153,.22);color:#d1fae5;
+  }
+  .btn.gas.active{background:rgba(52,211,153,.55);}
+  .btn.brake{
+    border-color:rgba(248,113,113,.7);
+    background:rgba(248,113,113,.18);color:#fee2e2;
+  }
+  .btn.brake.active{background:rgba(248,113,113,.5);}
+
+  /* ---------- ওভারলে ---------- */
+  #overlay{
+    position:fixed;inset:0;z-index:20;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:16px;padding:28px;text-align:center;
+    background:rgba(6,10,20,.8);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+    opacity:0;pointer-events:none;transition:opacity .28s ease;
+  }
+  #overlay.show{opacity:1;pointer-events:auto;}
+  #ovTitle{
+    font-size:30px;font-weight:900;letter-spacing:.5px;
+    background:linear-gradient(180deg,#67e8f9,#0ea5e9);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 4px 14px rgba(14,165,233,.35));
+  }
+  #ovMsg{font-size:17px;line-height:1.7;color:#cbd5e1;}
+  #ovMsg b{color:#67e8f9;font-size:20px;}
+  #ovBtn{
+    margin-top:6px;padding:15px 42px;border:none;border-radius:999px;
+    font-size:18px;font-weight:800;color:#04222b;cursor:pointer;
+    background:linear-gradient(180deg,#67e8f9,#0ea5e9);
+    box-shadow:0 10px 28px rgba(14,165,233,.4);
+    transition:transform .08s ease;
+  }
+  #ovBtn:active{transform:scale(.95);}
+  .hint{font-size:13px;color:#64748b;margin-top:4px;}
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<!-- কন্ট্রোল -->
+<div id="controls">
+  <div class="side">
+    <button class="btn" id="btnLeft" aria-label="বাম">◀</button>
+    <button class="btn" id="btnRight" aria-label="ডান">▶</button>
+  </div>
+  <div class="side">
+    <button class="btn brake" id="btnBrake" aria-label="ব্রেক">■</button>
+    <button class="btn gas" id="btnGas" aria-label="গ্যাস">▲</button>
+  </div>
+</div>
+
+<!-- শুরু / গেম ওভার -->
+<div id="overlay" class="show">
+  <div id="ovTitle">🏁 রেসিং গেম</div>
+  <div id="ovMsg">গ্যাস চেপে গাড়ি চালান<br>বাম-ডান বাটনে বাঁচিয়ে চলুন</div>
+  <button id="ovBtn">শুরু করুন</button>
+  <div class="hint">বাম দিকের ◀ ▶ = স্টিয়ারিং • ডান দিকের ▲ ■ = গ্যাস / ব্রেক</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------- Canvas সেটআপ ----------------
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const overlay = document.getElementById("overlay");
+  const ovTitle = document.getElementById("ovTitle");
+  const ovMsg = document.getElementById("ovMsg");
+  const ovBtn = document.getElementById("ovBtn");
+
+  let W = 0, H = 0, DPR = 1;
+  const LANES = 3;
+  const road = { x: 0, w: 0 };
+  let laneW = 0, carW = 0, carH = 0, playerY = 0;
+  let started = false;
+
+  // ---------------- গেম স্টেট ----------------
+  const player = { x: 0, y: 0, w: 0, h: 0, speed: 300 };
+  const keys = { left: false, right: false, gas: false, brake: false };
+
+  let state = "ready";           // ready | playing | over
+  let enemies = [];
+  let roadOffset = 0;
+  let dist = 0, score = 0, best = 0;
+  let spawnTimer = 0;
+  let shake = 0, flash = 0;
+  let overTimer = null;
+
+  const ENEMY_COLORS = ["#e74c3c","#3498db","#f1c40f","#9b59b6","#e67e22","#1abc9c","#ec4899"];
+
+  try { best = parseInt(localStorage.getItem("raceBest") || "0", 10) || 0; } catch (e) { best = 0; }
+
+  // ---------------- হেল্পার ----------------
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+  function rr(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // ---------------- রিসাইজ ----------------
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+
+    canvas.width = Math.floor(W * DPR);
+    canvas.height = Math.floor(H * DPR);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    road.w = Math.min(W * 0.88, 460);
+    road.x = (W - road.w) / 2;
+    laneW = road.w / LANES;
+
+    carW = laneW * 0.62;
+    carH = carW * 1.85;
+
+    // কন্ট্রোল প্যানেলের উপরে থাকবে
+    playerY = Math.max(H * 0.5, H - carH - 140);
+
+    player.w = carW;
+    player.h = carH;
+    player.y = playerY;
+
+    if (started) {
+      player.x = clamp(player.x, road.x + 5, road.x + road.w - carW - 5);
+    }
+  }
+
+  // ---------------- রিসেট ----------------
+  function reset() {
+    player.w = carW;
+    player.h = carH;
+    player.y = playerY;
+    player.x = road.x + road.w / 2 - carW / 2;
+    player.speed = 320;
+
+    enemies = [];
+    roadOffset = 0;
+    dist = 0;
+    score = 0;
+    spawnTimer = 0.9;
+    shake = 0;
+    flash = 0;
+    keys.left = keys.right = keys.gas = keys.brake = false;
+  }
+
+  // ---------------- শত্রু গাড়ি তৈরি ----------------
+  function spawnEnemy() {
+    const lane = Math.floor(Math.random() * LANES);
+    const x = road.x + lane * laneW + (laneW - carW) / 2;
+    enemies.push({
+      x: x,
+      y: -carH - 20,
+      w: carW,
+      h: carH,
+      sp: 180 + Math.random() * 280,          // এই গাড়ির নিজস্ব গতি
+      color: ENEMY_COLORS[(Math.random() * ENEMY_COLORS.length) | 0]
+    });
+  }
+
+  // ---------------- সংঘর্ষ ----------------
+  function hitTest(a, b) {
+    const ax = a.x + a.w * 0.18, aw = a.w * 0.64;
+    const ay = a.y + a.h * 0.12, ah = a.h * 0.76;
+    const bx = b.x + b.w * 0.18, bw = b.w * 0.64;
+    const by = b.y + b.h * 0.12, bh = b.h * 0.76;
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
+
+  // ---------------- আপডেট ----------------
+  function update(dt) {
+    if (shake > 0) { shake *= Math.pow(0.0015, dt); if (shake < 0.4) shake = 0; }
+    if (flash > 0) { flash -= dt * 2.5; if (flash < 0) flash = 0; }
+
+    if (state !== "playing") return;
+
+    // --- স্টিয়ারিং ---
+    const steer = 440;
+    if (keys.left) player.x -= steer * dt;
+    if (keys.right) player.x += steer * dt;
+    player.x = clamp(player.x, road.x + 5, road.x + road.w - player.w - 5);
+
+    // --- গতি ---
+    const MAXS = 1150, MINS = 90, CRUISE = 320;
+    if (keys.gas) {
+      player.speed += 800 * dt;
+    } else if (keys.brake) {
+      player.speed -= 1650 * dt;
+    } else {
+      if (player.speed > CRUISE) player.speed -= 280 * dt;
+      else if (player.speed < CRUISE) player.speed += 220 * dt;
+    }
+    player.speed = clamp(player.speed, MINS, MAXS);
+
+    // --- দূরত্ব ও স্কোর ---
+    roadOffset += player.speed * dt;
+    dist += player.speed * dt;
+    score = Math.floor(dist / 12);
+
+    // --- শত্রু স্পন ---
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      const safe = !enemies.some(function (e) { return e.y < carH * 2.0; });
+      if (safe) {
+        spawnEnemy();
+        const base = Math.max(0.45, 1.0 - dist / 45000);
+        spawnTimer = base + Math.random() * 0.35;
+      } else {
+        spawnTimer = 0.12;
+      }
+    }
+
+    // --- শত্রু মুভমেন্ট + সংঘর্ষ ---
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      e.y += (player.speed - e.sp) * dt;
+
+      if (e.y > H + 140 || e.y < -carH * 5) {
+        enemies.splice(i, 1);
+        continue;
+      }
+      if (hitTest(player, e)) {
+        crash();
+        return;
+      }
+    }
+  }
+
+  // ---------------- ক্র্যাশ ----------------
+  function crash() {
+    state = "over";
+    shake = 16;
+    flash = 1;
+
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem("raceBest", String(best)); } catch (e) {}
+    }
+
+    ovTitle.textContent = "💥 ধাক্কা লেগেছে!";
+    ovMsg.innerHTML = "স্কোর: <b>" + score + "</b> মিটার<br>সেরা স্কোর: <b>" + best + "</b>";
+    ovBtn.textContent = "আবার খেলুন";
+
+    if (overTimer) clearTimeout(overTimer);
+    overTimer = setTimeout(function () {
+      overlay.classList.add("show");
+    }, 420);
+  }
+
+  // ---------------- গাড়ি আঁকা ----------------
+  function drawCar(x, y, w, h, color) {
+    // ছায়া
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    rr(x + w * 0.08, y + h * 0.06, w, h, w * 0.24);
+    ctx.fill();
+
+    // চাকা
+    ctx.fillStyle = "#15151a";
+    const ww = w * 0.18, wh = h * 0.19;
+    ctx.fillRect(x - ww * 0.42, y + h * 0.11, ww, wh);
+    ctx.fillRect(x - ww * 0.42, y + h * 0.70, ww, wh);
+    ctx.fillRect(x + w - ww * 0.58, y + h * 0.11, ww, wh);
+    ctx.fillRect(x + w - ww * 0.58, y + h * 0.70, ww, wh);
+
+    // বডি
+    rr(x, y, w, h, w * 0.24);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
+    ctx.stroke();
+
+    // সামনের কাচ
+    ctx.fillStyle = "rgba(185,232,255,0.9)";
+    rr(x + w * 0.15, y + h * 0.15, w * 0.70, h * 0.19, w * 0.10);
+    ctx.fill();
+
+    // ছাদ
+    ctx.fillStyle = "rgba(255,255,255,0.13)";
+    rr(x + w * 0.12, y + h * 0.38, w * 0.76, h * 0.26, w * 0.10);
+    ctx.fill();
+
+    // পেছনের কাচ
+    ctx.fillStyle = "rgba(150,205,235,0.85)";
+    rr(x + w * 0.15, y + h * 0.68, w * 0.70, h * 0.17, w * 0.10);
+    ctx.fill();
+
+    // হেডলাইট
+    ctx.fillStyle = "rgba(255,247,190,0.95)";
+    ctx.fillRect(x + w * 0.13, y + h * 0.025, w * 0.20, h * 0.042);
+    ctx.fillRect(x + w * 0.67, y + h * 0.025, w * 0.20, h * 0.042);
+
+    // টেইল লাইট
+    ctx.fillStyle = "rgba(255,64,64,0.95)";
+    ctx.fillRect(x + w * 0.13, y + h * 0.933, w * 0.20, h * 0.042);
+    ctx.fillRect(x + w * 0.67, y + h * 0.933, w * 0.20, h * 0.042);
+  }
+
+  // ---------------- বিশ্ব আঁকা ----------------
+  function drawWorld() {
+    // ঘাস
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#1b6b34");
+    g.addColorStop(1, "#124a26");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // ঘাসের স্ট্রাইপ (গতির অনুভূতি)
+    const sp = 140;
+    const soff = roadOffset % sp;
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    for (let y = -sp + soff; y < H; y += sp) {
+      ctx.fillRect(0, y, road.x, 70);
+      ctx.fillRect(road.x + road.w, y, W - road.x - road.w, 70);
+    }
+
+    // রাস্তা
+    const rg = ctx.createLinearGradient(road.x, 0, road.x + road.w, 0);
+    rg.addColorStop(0, "#33333b");
+    rg.addColorStop(0.5, "#3d3d46");
+    rg.addColorStop(1, "#33333b");
+    ctx.fillStyle = rg;
+    ctx.fillRect(road.x, 0, road.w, H);
+
+    // কার্ব (লাল-সাদা)
+    const kp = 60;
+    const ko = roadOffset % kp;
+    for (let y = -kp + ko; y < H; y += kp) {
+      ctx.fillStyle = "#e64545";
+      ctx.fillRect(road.x - 9, y, 9, 30);
+      ctx.fillRect(road.x + road.w, y + 30, 9, 30);
+      ctx.fillStyle = "#f2f2f2";
+      ctx.fillRect(road.x - 9, y + 30, 9, 30);
+      ctx.fillRect(road.x + road.w, y, 9, 30);
+    }
+
+    // লেন ড্যাশ
+    const dashLen = 64, dashGap = 56, period = dashLen + dashGap;
+    const off = roadOffset % period;
+    ctx.fillStyle = "rgba(255,255,255,0.78)";
+    for (let i = 1; i < LANES; i++) {
+      const x = road.x + i * laneW - 3;
+      for (let y = -period + off; y < H; y += period) {
+        ctx.fillRect(x, y, 6, dashLen);
+      }
+    }
+
+    // শত্রু গাড়ি
+    for (let i = 0; i < enemies.length; i++) {
+      const e = enemies[i];
+      drawCar(e.x, e.y, e.w, e.h, e.color);
+    }
+
+    // খেলোয়াড়ের গাড়ি
+    drawCar(player.x, player.y, player.w, player.h, "#22d3ee");
+  }
+
+  // ---------------- HUD ----------------
+  function drawHUD() {
+    ctx.save();
+    ctx.textBaseline = "top";
+    ctx.font = "bold 16px system-ui, -apple-system, sans-serif";
+
+    // স্কোর
+    ctx.fillStyle = "rgba(0,0,0,0.38)";
+    rr(14, 14, 148, 36, 12);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "left";
+    ctx.fillText("স্কোর: " + score, 28, 24);
+
+    // গতি
+    const kmh = Math.round(player.speed * 0.12);
+    ctx.fillStyle = "rgba(0,0,0,0.38)";
+    rr(W - 148 - 14, 14, 148, 36, 12);
+    ctx.fill();
+    ctx.fillStyle = kmh > 100 ? "#fca5a5" : "#86efac";
+    ctx.textAlign = "right";
+    ctx.fillText(kmh + " km/h", W - 28, 24);
+
+    ctx.restore();
+  }
+
+  // ---------------- রেন্ডার ----------------
+  function render() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    ctx.save();
+    if (shake > 0) {
+      ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+    }
+    drawWorld();
+    ctx.restore();
+
+    // ক্র্যাশ ফ্ল্যাশ
+    if (flash > 0) {
+      ctx.fillStyle = "rgba(255,60,60," + (flash * 0.45) + ")";
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    drawHUD();
+  }
+
+  // ---------------- গেম লুপ ----------------
+  let lastTime = 0;
+  function loop(t) {
+    if (!lastTime) lastTime = t;
+    let dt = (t - lastTime) / 1000;
+    lastTime = t;
+    if (dt > 0.05) dt = 0.05;   // বড় ল্যাগ হলে ক্ল্যাম্প
+    update(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------------- বাটন বাইন্ডিং ----------------
+  function bindButton(el, key) {
+    function on(e) {
+      e.preventDefault();
+      keys[key] = true;
+      el.classList.add("active");
+    }
+    function off(e) {
+      e.preventDefault();
+      keys[key] = false;
+      el.classList.remove("active");
+    }
+    el.addEventListener("pointerdown", on, { passive: false });
+    el.addEventListener("pointerup", off, { passive: false });
+    el.addEventListener("pointercancel", off, { passive: false });
+    el.addEventListener("pointerleave", off, { passive: false });
+    el.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  }
+
+  bindButton(document.getElementById("btnLeft"), "left");
+  bindButton(document.getElementById("btnRight"), "right");
+  bindButton(document.getElementById("btnGas"), "gas");
+  bindButton(document.getElementById("btnBrake"), "brake");
+
+  // কীবোর্ড (ডেস্কটপে টেস্টের জন্য)
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") keys.left = true;
+    if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") keys.right = true;
+    if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") keys.gas = true;
+    if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") keys.brake = true;
+  });
+  window.addEventListener("keyup", function (e) {
+    if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") keys.left = false;
+    if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") keys.right = false;
+    if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") keys.gas = false;
+    if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") keys.brake = false;
+  });
+
+  // ---------------- শুরু করা ----------------
+  function startGame() {
+    if (overTimer) { clearTimeout(overTimer); overTimer = null; }
+    overlay.classList.remove("show");
+    started = true;
+    reset();
+    state = "playing";
+  }
+
+  ovBtn.addEventListener("click", function (e) {
+    e.preventDefault();
+    startGame();
+  });
+
+  // স্ক্রল/জুম বন্ধ
+  document.addEventListener("touchmove", function (e) {
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+
+  // ভিজিবিলিটি → পজ
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      keys.left = keys.right = keys.gas = keys.brake = false;
+      document.querySelectorAll(".btn.active").forEach(function (b) { b.classList.remove("active"); });
+    }
+  });
+
+  // রিসাইজ
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", function () {
+    setTimeout(resize, 220);
+  });
+
+  // ---------------- ইনিশিয়ালাইজ ----------------
+  resize();
+  reset();
+  overlay.classList.add("show");
+  requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
