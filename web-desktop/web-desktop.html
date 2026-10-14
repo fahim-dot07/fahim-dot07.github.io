@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Web Desktop Environment</title>
+    <style>
+        :root {
+            --taskbar-height: 50px;
+            --primary-color: rgba(15, 23, 42, 0.9);
+            --accent-color: #3b82f6;
+            --text-color: #ffffff;
+            --window-bg: rgba(30, 41, 59, 0.95);
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body, html {
+            width: 100vw;
+            height: 100dvh;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #0f172a, #1e293b, #334155);
+            background-size: cover;
+            color: var(--text-color);
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+        .desktop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: calc(100dvh - var(--taskbar-height));
+            padding: 15px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
+            grid-auto-rows: 85px;
+            gap: 15px;
+            overflow-y: auto;
+        }
+        .desktop-icon {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 8px;
+            padding: 5px;
+            transition: background 0.2s;
+        }
+        .desktop-icon:active, .desktop-icon:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .desktop-icon span {
+            font-size: 11px;
+            margin-top: 5px;
+            text-align: center;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+            word-break: break-all;
+        }
+        .icon-symbol {
+            font-size: 32px;
+        }
+
+        /* Taskbar - Always Fixed to Bottom Safely */
+        .taskbar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: var(--taskbar-height);
+            background: var(--primary-color);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            gap: 8px;
+            z-index: 99999;
+            border-top: 1px solid rgba(255,255,255,0.15);
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        .start-btn {
+            background: var(--accent-color);
+            border: none;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 13px;
+        }
+        .taskbar-apps {
+            display: flex;
+            gap: 5px;
+            flex-grow: 1;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .taskbar-apps::-webkit-scrollbar { display: none; }
+        .task-item {
+            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            white-space: nowrap;
+            max-width: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .tray {
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            opacity: 0.95;
+            white-space: nowrap;
+        }
+        .tray button {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 3px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+        }
+
+        /* Start Menu */
+        .start-menu {
+            position: fixed;
+            bottom: calc(var(--taskbar-height) + 6px + env(safe-area-inset-bottom, 0px));
+            left: 10px;
+            width: 270px;
+            max-height: 380px;
+            background: rgba(15, 23, 42, 0.96);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            display: none;
+            flex-direction: column;
+            z-index: 100000;
+            overflow: hidden;
+        }
+        .start-menu.active { display: flex; }
+        .start-header {
+            padding: 12px;
+            background: rgba(255,255,255,0.06);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            font-weight: bold;
+            font-size: 13px;
+        }
+        .start-list {
+            padding: 6px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .start-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .start-item:hover { background: rgba(255,255,255,0.12); }
+
+        /* Window */
+        .window {
+            position: absolute;
+            top: 40px;
+            left: 15px;
+            width: 88%;
+            max-width: 420px;
+            height: 350px;
+            background: var(--window-bg);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 8px;
+            box-shadow: 0 10px 35px rgba(0,0,0,0.7);
+            display: flex;
+            flex-direction: column;
+            z-index: 1000;
+            overflow: hidden;
+            transition: transform 0.15s ease, opacity 0.15s ease;
+        }
+        .window.minimized {
+            transform: scale(0);
+            opacity: 0;
+            pointer-events: none;
+        }
+        .window-header {
+            height: 36px;
+            background: rgba(255,255,255,0.08);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 10px;
+            cursor: move;
+            border-bottom: 1px solid rgba(255,255,255,0.15);
+        }
+        .window-title {
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .window-controls {
+            display: flex;
+            gap: 6px;
+        }
+        .win-btn {
+            width: 20px;
+            height: 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .btn-min { background: #eab308; }
+        .btn-max { background: #22c55e; }
+        .btn-close { background: #ef4444; }
+        .window-body {
+            flex-grow: 1;
+            padding: 10px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+
+        /* App Specific Styles */
+        .notepad-textarea {
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 4px;
+            color: white;
+            padding: 8px;
+            resize: none;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .calc-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 5px;
+            height: 100%;
+        }
+        .calc-display {
+            grid-column: span 4;
+            background: rgba(0,0,0,0.45);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 4px;
+            padding: 8px;
+            font-size: 18px;
+            text-align: right;
+            font-family: monospace;
+        }
+        .calc-btn {
+            background: rgba(255,255,255,0.12);
+            border: none;
+            color: white;
+            border-radius: 4px;
+            font-size: 15px;
+            cursor: pointer;
+        }
+        .calc-btn:active { background: rgba(255,255,255,0.25); }
+        .calc-btn.op { background: var(--accent-color); }
+        .terminal-body {
+            background: #060913;
+            color: #22c55e;
+            font-family: monospace;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .terminal-output {
+            flex-grow: 1;
+            overflow-y: auto;
+            margin-bottom: 5px;
+            white-space: pre-wrap;
+            font-size: 11px;
+        }
+        .terminal-input-line {
+            display: flex;
+            gap: 6px;
+        }
+        .terminal-input {
+            background: transparent;
+            border: none;
+            color: #22c55e;
+            outline: none;
+            flex-grow: 1;
+            font-family: monospace;
+            font-size: 11px;
+        }
+        .file-list {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .game-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            width: 180px;
+            margin: 15px auto;
+        }
+        .cell {
+            aspect-ratio: 1;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            font-size: 22px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Desktop Icons -->
+    <div class="desktop" id="desktop">
+        <div class="desktop-icon" onclick="openApp('notepad')">
+            <div class="icon-symbol">📝</div>
+            <span data-en="Notepad" data-bn="নোটপ্যাড">Notepad</span>
+        </div>
+        <div class="desktop-icon" onclick="openApp('calc')">
+            <div class="icon-symbol">🧮</div>
+            <span data-en="Calculator" data-bn="ক্যালকুলেটর">Calculator</span>
+        </div>
+        <div class="desktop-icon" onclick="openApp('terminal')">
+            <div class="icon-symbol">💻</div>
+            <span data-en="Terminal" data-bn="টার্মিনাল">Terminal</span>
+        </div>
+        <div class="desktop-icon" onclick="openApp('files')">
+            <div class="icon-symbol">📁</div>
+            <span data-en="Files" data-bn="ফাইল ম্যানেজার">Files</span>
+        </div>
+        <div class="desktop-icon" onclick="openApp('game')">
+            <div class="icon-symbol">🎮</div>
+            <span data-en="Tic-Tac-Toe" data-bn="টিক-ট্যাক-টো">Tic-Tac-Toe</span>
+        </div>
+        <div class="desktop-icon" onclick="openApp('settings')">
+            <div class="icon-symbol">⚙️</div>
+            <span data-en="Settings" data-bn="সেটিংস">Settings</span>
+        </div>
+    </div>
+
+    <!-- Taskbar -->
+    <div class="taskbar">
+        <button class="start-btn" onclick="toggleStartMenu()">
+            <span>🪟</span> <span data-en="Start" data-bn="স্টার্ট">Start</span>
+        </button>
+        <div class="taskbar-apps" id="taskbarApps"></div>
+        <div class="tray">
+            <button onclick="toggleLanguage()" id="langBtn">BN</button>
+            <span id="clock">00:00</span>
+        </div>
+    </div>
+
+    <!-- Start Menu -->
+    <div class="start-menu" id="startMenu">
+        <div class="start-header" data-en="Applications" data-bn="অ্যাপ্লিকেশনসমূহ">Applications</div>
+        <div class="start-list">
+            <div class="start-item" onclick="openApp('notepad'); toggleStartMenu();"><span>📝</span> <span data-en="Notepad" data-bn="নোটপ্যাড">Notepad</span></div>
+            <div class="start-item" onclick="openApp('calc'); toggleStartMenu();"><span>🧮</span> <span data-en="Calculator" data-bn="ক্যালকুলেটর">Calculator</span></div>
+            <div class="start-item" onclick="openApp('terminal'); toggleStartMenu();"><span>💻</span> <span data-en="Terminal" data-bn="টার্মিনাল">Terminal</span></div>
+            <div class="start-item" onclick="openApp('files'); toggleStartMenu();"><span>📁</span> <span data-en="Files" data-bn="ফাইল ম্যানেজার">Files</span></div>
+            <div class="start-item" onclick="openApp('game'); toggleStartMenu();"><span>🎮</span> <span data-en="Tic-Tac-Toe" data-bn="টিক-ট্যাক-টো">Tic-Tac-Toe</span></div>
+            <div class="start-item" onclick="openApp('settings'); toggleStartMenu();"><span>⚙️</span> <span data-en="Settings" data-bn="সেটিংস">Settings</span></div>
+        </div>
+    </div>
+
+    <!-- Window Container -->
+    <div id="windowContainer"></div>
+
+    <script>
+        let currentLang = 'en';
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'en' ? 'bn' : 'en';
+            document.getElementById('langBtn').innerText = currentLang === 'en' ? 'BN' : 'EN';
+            
+            document.querySelectorAll('[data-en]').forEach(el => {
+                el.innerText = el.getAttribute(`data-${currentLang}`);
+            });
+        }
+
+        // Clock Update
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }, 1000);
+
+        // Start Menu Toggle
+        function toggleStartMenu() {
+            const menu = document.getElementById('startMenu');
+            menu.classList.toggle('active');
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.start-menu') && !e.target.closest('.start-btn')) {
+                document.getElementById('startMenu').classList.remove('active');
+            }
+        });
+
+        // App Management
+        const apps = {
+            notepad: {
+                titleEn: 'Notepad', titleBn: 'নোটপ্যাড', icon: '📝',
+                content: `<textarea class="notepad-textarea" id="notepadText" placeholder="Type notes here...">${localStorage.getItem('web_notes') || ''}</textarea>`
+            },
+            calc: {
+                titleEn: 'Calculator', titleBn: 'ক্যালকুলেটর', icon: '🧮',
+                content: `
+                    <div class="calc-grid">
+                        <div class="calc-display" id="calcDisplay">0</div>
+                        <button class="calc-btn" onclick="calcClear()">C</button>
+                        <button class="calc-btn" onclick="calcAppend('/')">/</button>
+                        <button class="calc-btn" onclick="calcAppend('*')">*</button>
+                        <button class="calc-btn op" onclick="calcDel()">⌫</button>
+                        <button class="calc-btn" onclick="calcAppend('7')">7</button>
+                        <button class="calc-btn" onclick="calcAppend('8')">8</button>
+                        <button class="calc-btn" onclick="calcAppend('9')">9</button>
+                        <button class="calc-btn op" onclick="calcAppend('-')">-</button>
+                        <button class="calc-btn" onclick="calcAppend('4')">4</button>
+                        <button class="calc-btn" onclick="calcAppend('5')">5</button>
+                        <button class="calc-btn" onclick="calcAppend('6')">6</button>
+                        <button class="calc-btn op" onclick="calcAppend('+')">+</button>
+                        <button class="calc-btn" onclick="calcAppend('1')">1</button>
+                        <button class="calc-btn" onclick="calcAppend('2')">2</button>
+                        <button class="calc-btn" onclick="calcAppend('3')">3</button>
+                        <button class="calc-btn op" onclick="calcEval()" style="grid-row: span 2; background: #22c55e;">=</button>
+                        <button class="calc-btn" onclick="calcAppend('0')" style="grid-column: span 2;">0</button>
+                        <button class="calc-btn" onclick="calcAppend('.')">.</button>
+                    </div>
+                `
+            },
+            terminal: {
+                titleEn: 'Terminal', titleBn: 'টার্মিনাল', icon: '💻',
+                content: `
+                    <div class="terminal-body">
+                        <div class="terminal-output" id="termOutput">WebOS v1.0. Type 'help' for commands.\n</div>
+                        <div class="terminal-input-line">
+                            <span>$</span>
+                            <input type="text" class="terminal-input" id="termInput" onkeydown="handleTerminal(event)">
+                        </div>
+                    </div>
+                `
+            },
+            files: {
+                titleEn: 'File Manager', titleBn: 'ফাইল ম্যানেজার', icon: '📁',
+                content: `
+                    <div class="file-list">
+                        <div class="file-item"><span>📁</span> <span>Documents</span></div>
+                        <div class="file-item"><span>📁</span> <span>Downloads</span></div>
+                        <div class="file-item"><span>📁</span> <span>Pictures</span></div>
+                        <div class="file-item"><span>📄</span> <span>readme.txt</span></div>
+                    </div>
+                `
+            },
+            game: {
+                titleEn: 'Tic-Tac-Toe', titleBn: 'টিক-ট্যাক-টো', icon: '🎮',
+                content: `
+                    <div style="text-align:center;">
+                        <p id="gameStatus" style="margin-bottom: 5px;">Player X Turn</p>
+                        <div class="game-grid" id="tictactoeGrid">
+                            <div class="cell" onclick="cellClick(0)"></div>
+                            <div class="cell" onclick="cellClick(1)"></div>
+                            <div class="cell" onclick="cellClick(2)"></div>
+                            <div class="cell" onclick="cellClick(3)"></div>
+                            <div class="cell" onclick="cellClick(4)"></div>
+                            <div class="cell" onclick="cellClick(5)"></div>
+                            <div class="cell" onclick="cellClick(6)"></div>
+                            <div class="cell" onclick="cellClick(7)"></div>
+                            <div class="cell" onclick="cellClick(8)"></div>
+                        </div>
+                        <button onclick="resetGame()" style="margin-top:10px; padding:4px 10px; background:var(--accent-color); border:none; color:white; border-radius:4px; cursor:pointer;">Restart</button>
+                    </div>
+                `
+            },
+            settings: {
+                titleEn: 'Settings', titleBn: 'সেটিংস', icon: '⚙️',
+                content: `
+                    <div style="display:flex; flex-direction:column; gap:10px;">
+                        <h3 style="font-size:14px;" data-en="System Settings" data-bn="সিস্টেম সেটিংস">System Settings</h3>
+                        <p><span data-en="OS Version:" data-bn="ওএস ভার্সন:">OS Version:</span> WebOS Mobile Edition 1.0</p>
+                        <p><span data-en="Storage:" data-bn="স্টোরেজ:">Storage:</span> 32GB / 64GB Available</p>
+                        <button onclick="toggleLanguage()" style="padding:6px; background:var(--accent-color); border:none; color:white; border-radius:4px; cursor:pointer;" data-en="Switch Language (EN/BN)" data-bn="ভাষা পরিবর্তন করুন (EN/BN)">Switch Language (EN/BN)</button>
+                    </div>
+                `
+            }
+        };
+
+        let openWindows = {};
+
+        function openApp(appId) {
+            if (openWindows[appId]) {
+                restoreWindow(appId);
+                return;
+            }
+
+            const app = apps[appId];
+            const winId = 'win_' + appId;
+            const title = currentLang === 'en' ? app.titleEn : app.titleBn;
+
+            const win = document.createElement('div');
+            win.className = 'window';
+            win.id = winId;
+            win.innerHTML = `
+                <div class="window-header" onmousedown="bringToFront('${winId}')" ontouchstart="bringToFront('${winId}')">
+                    <div class="window-title"><span>${app.icon}</span> <span>${title}</span></div>
+                    <div class="window-controls">
+                        <button class="win-btn btn-min" onclick="minimizeWindow('${appId}')">_</button>
+                        <button class="win-btn btn-max" onclick="maximizeWindow('${winId}')">□</button>
+                        <button class="win-btn btn-close" onclick="closeWindow('${appId}')">×</button>
+                    </div>
+                </div>
+                <div class="window-body">${app.content}</div>
+            `;
+
+            document.getElementById('windowContainer').appendChild(win);
+            makeDraggable(win);
+
+            // Add to taskbar
+            const taskItem = document.createElement('div');
+            taskItem.className = 'task-item';
+            taskItem.id = 'task_' + appId;
+            taskItem.innerHTML = `${app.icon} ${title}`;
+            taskItem.onclick = () => restoreWindow(appId);
+            document.getElementById('taskbarApps').appendChild(taskItem);
+
+            openWindows[appId] = win;
+            bringToFront(winId);
+
+            // Notepad auto-save listener
+            if (appId === 'notepad') {
+                setTimeout(() => {
+                    document.getElementById('notepadText').oninput = (e) => {
+                        localStorage.setItem('web_notes', e.target.value);
+                    };
+                }, 100);
+            }
+        }
+
+        let zIndexCounter = 1000;
+        function bringToFront(winId) {
+            const win = document.getElementById(winId);
+            if (win) win.style.zIndex = ++zIndexCounter;
+        }
+
+        function closeWindow(appId) {
+            const win = document.getElementById('win_' + appId);
+            if (win) win.remove();
+            const taskItem = document.getElementById('task_' + appId);
+            if (taskItem) taskItem.remove();
+            delete openWindows[appId];
+        }
+
+        function minimizeWindow(appId) {
+            const win = document.getElementById('win_' + appId);
+            if (win) win.classList.add('minimized');
+        }
+
+        function restoreWindow(appId) {
+            const win = document.getElementById('win_' + appId);
+            if (win) {
+                win.classList.remove('minimized');
+                bringToFront('win_' + appId);
+            }
+        }
+
+        function maximizeWindow(winId) {
+            const win = document.getElementById(winId);
+            if (win.style.width === '100%') {
+                win.style.width = '88%';
+                win.style.height = '350px';
+                win.style.top = '40px';
+                win.style.left = '15px';
+            } else {
+                win.style.width = '100%';
+                win.style.height = 'calc(100dvh - var(--taskbar-height))';
+                win.style.top = '0';
+                win.style.left = '0';
+            }
+        }
+
+        // Dragging implementation for mobile and desktop
+        function makeDraggable(elmnt) {
+            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+            const header = elmnt.querySelector('.window-header');
+
+            header.onmousedown = dragMouseDown;
+            header.onttouchstart = dragTouchStart;
+
+            function dragMouseDown(e) {
+                e.preventDefault();
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                document.onmouseup = closeDragElement;
+                document.onmousemove = elementDrag;
+            }
+
+            function elementDrag(e) {
+                e.preventDefault();
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+                elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+            }
+
+            function closeDragElement() {
+                document.onmouseup = null;
+                document.onmousemove = null;
+            }
+
+            function dragTouchStart(e) {
+                if (e.touches.length === 1) {
+                    pos3 = e.touches[0].clientX;
+                    pos4 = e.touches[0].clientY;
+                    document.ontouchend = closeTouchDrag;
+                    document.ontouchmove = elementTouchDrag;
+                }
+            }
+
+            function elementTouchDrag(e) {
+                if (e.touches.length === 1) {
+                    pos1 = pos3 - e.touches[0].clientX;
+                    pos2 = pos4 - e.touches[0].clientY;
+                    pos3 = e.touches[0].clientX;
+                    pos4 = e.touches[0].clientY;
+                    elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+                    elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+                }
+            }
+
+            function closeTouchDrag() {
+                document.ontouchend = null;
+                document.ontouchmove = null;
+            }
+        }
+
+        // Calculator Logic
+        let calcVal = '';
+        function calcAppend(val) {
+            calcVal += val;
+            document.getElementById('calcDisplay').innerText = calcVal || '0';
+        }
+        function calcClear() {
+            calcVal = '';
+            document.getElementById('calcDisplay').innerText = '0';
+        }
+        function calcDel() {
+            calcVal = calcVal.slice(0, -1);
+            document.getElementById('calcDisplay').innerText = calcVal || '0';
+        }
+        function calcEval() {
+            try {
+                calcVal = eval(calcVal).toString();
+                document.getElementById('calcDisplay').innerText = calcVal;
+            } catch {
+                document.getElementById('calcDisplay').innerText = 'Error';
+                calcVal = '';
+            }
+        }
+
+        // Terminal Logic
+        function handleTerminal(e) {
+            if (e.key === 'Enter') {
+                const input = document.getElementById('termInput');
+                const output = document.getElementById('termOutput');
+                const cmd = input.value.trim();
+                
+                output.innerText += `$ ${cmd}\n`;
+                
+                if (cmd === 'help') {
+                    output.innerText += `Available commands: help, date, clear, echo [text], about\n`;
+                } else if (cmd === 'date') {
+                    output.innerText += `${new Date()}\n`;
+                } else if (cmd === 'clear') {
+                    output.innerText = '';
+                } else if (cmd.startsWith('echo ')) {
+                    output.innerText += `${cmd.slice(5)}\n`;
+                } else if (cmd === 'about') {
+                    output.innerText += `WebOS Mobile Edition - Running in Browser Environment\n`;
+                } else if (cmd !== '') {
+                    output.innerText += `Command not found: ${cmd}. Type 'help'\n`;
+                }
+                
+                input.value = '';
+                output.scrollTop = output.scrollHeight;
+            }
+        }
+
+        // Tic-Tac-Toe Game Logic
+        let board = ['', '', '', '', '', '', '', '', ''];
+        let currentPlayer = 'X';
+        let gameActive = true;
+
+        function cellClick(index) {
+            if (board[index] === '' && gameActive) {
+                board[index] = currentPlayer;
+                document.getElementsByClassName('cell')[index].innerText = currentPlayer;
+                
+                // Check win
+                const wins = [
+                    [0,1,2],[3,4,5],[6,7,8],
+                    [0,3,6],[1,4,7],[2,5,8],
+                    [0,4,8],[2,4,6]
+                ];
+                
+                let won = false;
+                for (let condition of wins) {
+                    let [a, b, c] = condition;
+                    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+                        won = true;
+                        break;
+                    }
+                }
+
+                if (won) {
+                    document.getElementById('gameStatus').innerText = `Player ${currentPlayer} Wins!`;
+                    gameActive = false;
+                } else if (!board.includes('')) {
+                    document.getElementById('gameStatus').innerText = `It's a Draw!`;
+                    gameActive = false;
+                } else {
+                    currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+                    document.getElementById('gameStatus').innerText = `Player ${currentPlayer} Turn`;
+                }
+            }
+        }
+
+        function resetGame() {
+            board = ['', '', '', '', '', '', '', '', ''];
+            currentPlayer = 'X';
+            gameActive = true;
+            document.getElementById('gameStatus').innerText = 'Player X Turn';
+            Array.from(document.getElementsByClassName('cell')).forEach(c => c.innerText = '');
+        }
+    </script>
+</body>
+</html>
